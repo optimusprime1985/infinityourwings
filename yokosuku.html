@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>マリオ風オートランゲーム</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden; /* スクロール防止 */
+            font-family: 'Courier New', Courier, monospace;
+        }
+        /* アスペクト比を維持しつつ画面いっぱいに */
+        canvas {
+            background-color: #5C94FC; /* マリオ風の空の色 */
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            max-width: 100%;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // ゲームの基本設定
+    const GROUND_Y = 320;
+    let gameState = 'title'; // 'title', 'countdown', 'playing', 'gameover'
+    let gameSpeed = 5;
+    let startTime = 0;
+    let surviveTime = 0;
+    let countdownValue = 3;
+    let frames = 0;
+    let spawnRate = 100;
+
+    // プレイヤーオブジェクト
+    const player = {
+        x: 100,
+        y: 100,
+        width: 32,
+        height: 32,
+        vy: 0,
+        gravity: 0.8,
+        jumpPower: -14,
+        isGrounded: false,
+        draw: function() {
+            ctx.fillStyle = '#E83030'; // マリオ風の赤
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            // 簡単な顔（目）
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(this.x + 20, this.y + 6, 6, 6);
+        },
+        update: function() {
+            this.vy += this.gravity;
+            this.y += this.vy;
+
+            // 地面との当たり判定
+            if (this.y + this.height >= GROUND_Y) {
+                this.y = GROUND_Y - this.height;
+                this.vy = 0;
+                this.isGrounded = true;
+            } else {
+                this.isGrounded = false;
+            }
+        },
+        jump: function() {
+            if (this.isGrounded) {
+                this.vy = this.jumpPower;
+                this.isGrounded = false;
+            }
+        }
+    };
+
+    // 障害物・敵を管理する配列
+    let obstacles = [];
+
+    class Obstacle {
+        constructor() {
+            this.type = Math.random() < 0.5 ? 'enemy' : 'pipe';
+            this.x = canvas.width;
+            
+            if (this.type === 'pipe') {
+                this.width = 40;
+                this.height = Math.random() * 40 + 30; // 30〜70の高さ
+                this.y = GROUND_Y - this.height;
+                this.color = '#00A800'; // 土管風の緑
+            } else {
+                this.width = 32;
+                this.height = 32;
+                this.y = GROUND_Y - this.height;
+                this.color = '#C84C0C'; // クリボー風の茶色
+            }
+        }
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+        update() {
+            this.x -= gameSpeed;
+        }
+    }
+
+    // ゲームの初期化
+    function resetGame() {
+        player.y = GROUND_Y - player.height;
+        player.vy = 0;
+        obstacles = [];
+        gameSpeed = 6;
+        spawnRate = 90;
+        frames = 0;
+        surviveTime = 0;
+    }
+
+    // カウントダウン処理
+    function startCountdown() {
+        gameState = 'countdown';
+        countdownValue = 3;
+        resetGame();
+
+        let countInterval = setInterval(() => {
+            countdownValue--;
+            if (countdownValue < 0) {
+                clearInterval(countInterval);
+                gameState = 'playing';
+                startTime = Date.now();
+            }
+        }, 1000);
+    }
+
+    // 入力処理（PCはクリック/スペース、スマホはタップ）
+    function handleInput(e) {
+        // スマホでのズームやスクロールを防止
+        if (e.type === 'touchstart') e.preventDefault(); 
+        
+        if (gameState === 'title' || gameState === 'gameover') {
+            startCountdown();
+        } else if (gameState === 'playing') {
+            player.jump();
+        }
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') handleInput(e);
+    });
+    canvas.addEventListener('touchstart', handleInput, {passive: false});
+    canvas.addEventListener('mousedown', handleInput);
+
+    // 背景と地面の描画
+    function drawBackground() {
+        // 地面
+        ctx.fillStyle = '#E8C080'; // ブロック風の色
+        ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+        // 地面の草
+        ctx.fillStyle = '#00A800';
+        ctx.fillRect(0, GROUND_Y, canvas.width, 10);
+    }
+
+    // UIの描画
+    function drawUI() {
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'left';
+        
+        if (gameState === 'playing' || gameState === 'gameover') {
+            // ストップウォッチ（生存時間）
+            let displayTime = (surviveTime / 1000).toFixed(2);
+            ctx.fillText('TIME: ' + displayTime + ' s', 20, 40);
+        }
+
+        ctx.textAlign = 'center';
+        if (gameState === 'title') {
+            ctx.font = 'bold 40px Arial';
+            ctx.fillText('AUTO RUNNER', canvas.width / 2, canvas.height / 2 - 20);
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('画面タップ または スペースキー でスタート', canvas.width / 2, canvas.height / 2 + 30);
+        } else if (gameState === 'countdown') {
+            ctx.font = 'bold 80px Arial';
+            if (countdownValue > 0) {
+                ctx.fillText(countdownValue, canvas.width / 2, canvas.height / 2 + 20);
+            } else {
+                ctx.fillText('START!', canvas.width / 2, canvas.height / 2 + 20);
+            }
+        } else if (gameState === 'gameover') {
+            ctx.font = 'bold 50px Arial';
+            ctx.fillStyle = '#FF4040';
+            ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.fillText('記録: ' + (surviveTime / 1000).toFixed(2) + ' 秒', canvas.width / 2, canvas.height / 2 + 30);
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('タップしてリトライ', canvas.width / 2, canvas.height / 2 + 80);
+        }
+    }
+
+    // メインループ
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawBackground();
+
+        if (gameState === 'playing') {
+            frames++;
+            surviveTime = Date.now() - startTime;
+
+            // 難易度の上昇（時間経過でスピードアップ＆出現頻度アップ）
+            if (frames % 300 === 0) {
+                gameSpeed += 0.5;
+                if (spawnRate > 30) spawnRate -= 5;
+            }
+
+            // 障害物の生成
+            if (frames % spawnRate === 0) {
+                obstacles.push(new Obstacle());
+            }
+
+            player.update();
+        }
+
+        // 障害物の更新と描画
+        for (let i = 0; i < obstacles.length; i++) {
+            let obs = obstacles[i];
+            
+            if (gameState === 'playing') {
+                obs.update();
+                
+                // 当たり判定
+                if (player.x < obs.x + obs.width &&
+                    player.x + player.width > obs.x &&
+                    player.y < obs.y + obs.height &&
+                    player.y + player.height > obs.y) {
+                    gameState = 'gameover';
+                }
+            }
+            obs.draw();
+        }
+
+        // 画面外に出た障害物を削除
+        obstacles = obstacles.filter(obs => obs.x + obs.width > 0);
+
+        // プレイヤーの描画
+        if (gameState !== 'title') {
+            player.draw();
+        }
+
+        drawUI();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ゲーム開始
+    requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>
